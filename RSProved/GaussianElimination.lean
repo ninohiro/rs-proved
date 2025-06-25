@@ -111,6 +111,10 @@ instance : Invertible (elim A i j) where
   invOf_mul_self := elim_inv_mul_elim A i j
   mul_invOf_self := elim_mul_elim_inv A i j
 
+def elim_swap_reduce (k_fin : Fin m) : Matrix (Fin m) (Fin m) K :=
+  let B := (swap K i k_fin) * reduce_row A i j * A
+  (elim B k_fin j) * (swap K i k_fin) * reduce_row A i j
+
 end
 
 instance InvertibleNonZero {c : K} (h : c ≠ 0) : Invertible c where
@@ -120,25 +124,62 @@ instance InvertibleNonZero {c : K} (h : c ≠ 0) : Invertible c where
     exact Field.mul_inv_cancel c h
   mul_invOf_self := Field.mul_inv_cancel c h
 
-def toReducedRowEchelonForm.rec (A : Matrix (Fin m) (Fin n) K) (pivot : List (Fin n))
+def toReducedRowEchelonForm.rec
+    (X : Matrix (Fin m) (Fin m) K) (A : Matrix (Fin m) (Fin n) K) (pivot : List (Fin n))
     (k : ℕ) (l : ℕ) :=
   if h_l_ge_n : l ≥ n then
-    (A, pivot)
+    (X, A, pivot)
   else if h_k_ge_m : k ≥ m then
-    (A, pivot)
+    (X, A, pivot)
   else
     let k_fin : Fin m := ⟨k, by linarith [h_k_ge_m]⟩
     let l_fin : Fin n := ⟨l, by linarith [h_l_ge_n]⟩
     match select (A.col l_fin) k with
     | some i =>
-      let B := (swap K i k_fin) * reduce_row A i l_fin * A
-      toReducedRowEchelonForm.rec ((elim B k_fin l_fin) * B)
+      let P := elim_swap_reduce A i l_fin k_fin
+      toReducedRowEchelonForm.rec
+          (P * X)
+          (P * A)
           (pivot ++ [l_fin]) (k + 1) (l + 1)
     | none =>
-      toReducedRowEchelonForm.rec A pivot k (l+1)
+      toReducedRowEchelonForm.rec X A pivot k (l+1)
 
 def toReducedRowEchelonForm (A : Matrix (Fin m) (Fin n) K) :=
-  toReducedRowEchelonForm.rec A [] 0 0
+  toReducedRowEchelonForm.rec 1 A [] 0 0
+
+lemma elim_mul_eq.rec
+    (X : Matrix (Fin m) (Fin m) K) (M : Matrix (Fin m) (Fin n) K) (pivot : List (Fin n))
+    (k : ℕ) (l : ℕ) :
+    let (Y, B, _) := toReducedRowEchelonForm.rec X (X * M) pivot k l
+    B = Y * M := by
+  unfold toReducedRowEchelonForm.rec
+  split_ifs with h_l_ge_n h_k_ge_m <;> try simp
+  let k_fin : Fin m := ⟨k, by linarith [h_k_ge_m]⟩
+  let l_fin : Fin n := ⟨l, by linarith [h_l_ge_n]⟩
+  match select ((X * M).col ⟨l, _⟩) k with
+  | some i =>
+    simp
+    let P := elim_swap_reduce (X * M) i l_fin k_fin
+    rw [← Matrix.mul_assoc P X M]
+    apply elim_mul_eq.rec
+  | none =>
+    simp
+    apply elim_mul_eq.rec
+
+theorem elim_mul_eq (A : Matrix (Fin m) (Fin n) K) :
+    let (Y, B, _) := toReducedRowEchelonForm A
+    B = Y * A := by
+  unfold toReducedRowEchelonForm
+  rw (occs := [1])[← Matrix.one_mul A]
+  apply elim_mul_eq.rec
+
+theorem elim_eq_inverse (A : Matrix (Fin m) (Fin m) K) [Invertible A] :
+    let (Y, _, _) := toReducedRowEchelonForm A
+    Y = A⁻¹ := by
+  apply (Matrix.mul_left_inj_of_invertible A).1
+  simp
+  rw [← elim_mul_eq A]
+  sorry
 
 def pivotVector (pivot : List (Fin n)) (v : Fin m → K) : Fin n → K :=
   ∑ j : Fin (pivot.length),
@@ -146,7 +187,7 @@ def pivotVector (pivot : List (Fin n)) (v : Fin m → K) : Fin n → K :=
 
 def nonTrivialSolution (A : Matrix (Fin m) (Fin n) K) :
     Option (Fin n → K):=
-  let (B, pivot) := toReducedRowEchelonForm A
+  let (_, B, pivot) := toReducedRowEchelonForm A
   match (Finset.univ \ pivot.toFinset).min with
   | some l =>
     some ((fun i => if i = l then 1 else 0) - pivotVector pivot (B.col l))
