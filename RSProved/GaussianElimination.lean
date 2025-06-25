@@ -4,6 +4,7 @@ import Mathlib.Data.Matrix.Defs
 import Mathlib.LinearAlgebra.Matrix.Swap
 import Mathlib.Algebra.Field.Defs
 import Mathlib.Tactic
+import Mathlib.Data.Matrix.Rank
 
 open Option Matrix
 
@@ -173,13 +174,9 @@ theorem elim_mul_eq (A : Matrix (Fin m) (Fin n) K) :
   rw (occs := [1])[← Matrix.one_mul A]
   apply elim_mul_eq.rec
 
-theorem elim_eq_inverse (A : Matrix (Fin m) (Fin m) K) [Invertible A] :
-    let (Y, _, _) := toReducedRowEchelonForm A
-    Y = A⁻¹ := by
-  apply (Matrix.mul_left_inj_of_invertible A).1
-  simp
-  rw [← elim_mul_eq A]
-  sorry
+def row_rank (A : Matrix (Fin m) (Fin n) K) : ℕ :=
+  let (_, _, pivot) := toReducedRowEchelonForm A
+  pivot.length
 
 def pivotVector (pivot : List (Fin n)) (v : Fin m → K) : Fin n → K :=
   ∑ j : Fin (pivot.length),
@@ -192,8 +189,3 @@ def nonTrivialSolution (A : Matrix (Fin m) (Fin n) K) :
   | some l =>
     some ((fun i => if i = l then 1 else 0) - pivotVector pivot (B.col l))
   | none => none
-
-def SampleA : Matrix (Fin 3) (Fin 4) ℚ := !![1, 3, 1, 9; 1, 1, -1, 1; 3, 11, 5, 35]
-#eval (toReducedRowEchelonForm SampleA)
-
-#eval nonTrivialSolution SampleA
