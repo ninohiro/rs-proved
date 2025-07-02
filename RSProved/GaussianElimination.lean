@@ -10,7 +10,7 @@ import Mathlib.Tactic
 
 open Option Matrix
 
-
+namespace Matrix
 theorem submatrix_mul_row {α l m n o : Type*} (A : Matrix l m α) (B : Matrix m n α)
     [Fintype m] [Mul α] [AddCommMonoid α] (r_reindex : o → l) :
     (A.submatrix r_reindex id) * B = (A * B).submatrix r_reindex id := by
@@ -119,18 +119,18 @@ end
 structure ReducedRowEchelonForm (mat : Matrix (Fin m) (Fin n) K) where
   elim : (Matrix (Fin m) (Fin m) K)ˣ
   val : Matrix (Fin m) (Fin n) K
-  pivots : List (Fin n)
-  rank : ℕ
+  pivots : List ℕ
+  h_pivot_lt_n x : pivots.get x < n
   h_elim_mat : elim.val * mat = val
-  h_pivots_eq_rank : pivots.length = rank
-  h_pivot_ordered (x y : Fin rank) : x < y →
-      pivots.get ⟨x, by simp [h_pivots_eq_rank]⟩ < pivots.get ⟨y, by simp [h_pivots_eq_rank]⟩
-  h_rank_le_height : rank ≤ m
-  h_rank_le_width : rank ≤ n
+  h_pivot_ordered x y : x < y →
+      pivots.get x < pivots.get y
+  h_rank_le_height : pivots.length ≤ m
+  h_rank_le_width : pivots.length ≤ n
   h_submatrix : val.submatrix
-      id (fun x : Fin rank => pivots.get ⟨x.1, by simp[h_pivots_eq_rank]⟩) =
-      (fun (i : Fin m) (j : Fin rank) => if i.val = j then 1 else 0)
-  h_echelon (i : Fin m) (j : Fin n) : i ≥ {j' ∈ pivots.toFinset | j' ≤ j}.card → val i j = 0
+      id (fun x => ⟨pivots.get x, h_pivot_lt_n x⟩) =
+      (fun (i : Fin m) (j : Fin pivots.length) => if i.val = j then 1 else 0)
+  h_echelon (i : Fin m) (j : Fin n) : i ≥
+      Finset.card {x | pivots.get x ≤ j} → val i j = 0
 
 def toReducedRowEchelonForm {n : ℕ} (A : Matrix (Fin m) (Fin n) K) :
     ReducedRowEchelonForm (K := K) (m := m) (n := n) A :=
@@ -140,9 +140,8 @@ def toReducedRowEchelonForm {n : ℕ} (A : Matrix (Fin m) (Fin n) K) :
       elim := 1
       val := A
       pivots := []
-      rank := 0
+      h_pivot_lt_n x := Fin.elim0 (List.length_nil ▸ x)
       h_elim_mat := by simp
-      h_pivots_eq_rank := rfl
       h_pivot_ordered := by simp
       h_rank_le_height := by simp
       h_rank_le_width := by simp
@@ -153,126 +152,116 @@ def toReducedRowEchelonForm {n : ℕ} (A : Matrix (Fin m) (Fin n) K) :
     }
   | n' + 1 =>
     let B' := toReducedRowEchelonForm A.subLeft
-    let C := B'.elim.val * A
-    match Finset.min
-        { x : Fin m | x ≥ B'.rank ∧ A x ⟨n', by linarith [B'.h_rank_le_width]⟩ ≠ 0} with
+    let C' := B'.elim.val * A
+    let S : Finset (Fin m) :=
+      { x : Fin m | x ≥ B'.pivots.length ∧ C' x ⟨n', by linarith [B'.h_rank_le_width]⟩ ≠ 0}
+    match h : S.min with
     | none =>
+      let C := C'
+      have h_subLeft : C.subLeft = B'.val := by
+        unfold C subLeft
+        rw [← submatrix_mul_col]
+        exact B'.h_elim_mat
       {
         elim := B'.elim
         val := C
-        pivots := B'.pivots.map Fin.castSucc
-        rank := B'.rank
+        pivots := B'.pivots
+        h_pivot_lt_n x:= by linarith [B'.h_pivot_lt_n x]
         h_elim_mat := rfl
-        h_pivots_eq_rank := by simp [B'.h_pivots_eq_rank]
-        h_pivot_ordered := by
-          simp
-          exact B'.h_pivot_ordered
-        h_rank_le_height := B'.h_rank_le_height
+        h_pivot_ordered := B'.h_pivot_ordered
         h_rank_le_width := by linarith [B'.h_rank_le_width]
+        h_rank_le_height := B'.h_rank_le_height
         h_submatrix := by
           rw [submatrix_row_col]
           unfold C
           rw [← submatrix_mul_row, ← submatrix_mul_col]
-          have h₀ : A.submatrix id (fun x : Fin B'.rank ↦
-              (List.map Fin.castSucc B'.pivots).get ⟨x.1, by simp [x.2, B'.h_pivots_eq_rank]⟩) =
-              A.subLeft.submatrix id (fun x : Fin B'.rank ↦
-              B'.pivots.get ⟨↑x, by simp [x.2, B'.h_pivots_eq_rank]⟩) := by
+          have h₁ : A.submatrix id (fun x ↦
+              ⟨B'.pivots.get x, by linarith [B'.h_pivot_lt_n x]⟩) =
+              A.subLeft.submatrix id (fun x ↦
+              ⟨B'.pivots.get x, by linarith [B'.h_pivot_lt_n x]⟩) := by
             ext i j
             simp
-            rfl
-          rw [h₀, Matrix.submatrix_id_id, submatrix_mul_col, B'.h_elim_mat, B'.h_submatrix]
+          rw [h₁, Matrix.submatrix_id_id, submatrix_mul_col, B'.h_elim_mat]
+          exact B'.h_submatrix
         h_echelon := by
-
+          intro i j
+          by_cases h_j_lt_n : j < n'
+          .
+            have h₀ : C i j = C.subLeft i ⟨j.1, h_j_lt_n⟩ := by simp
+            rw [h₀, h_subLeft]
+            exact B'.h_echelon i ⟨j.1, h_j_lt_n⟩
+          .
+            have h_j_eq_n' : j = ⟨n', by linarith⟩ := by ext; linarith [h_j_lt_n, j.2]
+            rw [h_j_eq_n']
+            have h₁ x : B'.pivots.get x ≤ n' := by linarith [B'.h_pivot_lt_n x]
+            simp [-List.get_eq_getElem, h₁]
+            have h₂ : i ∉ S := Finset.eq_empty_iff_forall_notMem.1 (Finset.min_eq_top.1 h) i
+            rw [Finset.mem_filter] at h₂
+            simp at h₂
+            exact h₂
       }
     | some i =>
-      ReducedRowEchelonForm := {
+      have h_i_in_S : i ∈ S := Finset.mem_of_min h
+      have h_lt_m : B'.pivots.length < m := by
+        rw [Finset.mem_filter] at h_i_in_S
+        simp at h_i_in_S
+        linarith [h_i_in_S.1, i.2]
+      let k : Fin m := ⟨B'.pivots.length, by linarith⟩
+      let C := (elimSwapReduce A i ⟨n', by linarith⟩ k).val * C'
+      have h_subLeft : C.subLeft = B'.val := by
+        sorry
+      {
+        elim := elimSwapReduce A i ⟨n', by linarith⟩ k * B'.elim
         val := C
-        pivots := B'.pivots
-        rank := B'.rank
-        h_pivots_eq_rank := rfl
-        h_pivot_ordered := by simp
-        h_rank_le_height := by simp
-        h_rank_le_width := by simp
-        h_submatrix := by simp
-        h_echelon := by simp
+        pivots := B'.pivots ++ [n']
+        h_pivot_lt_n x := by
+          if h : x < B'.pivots.length then
+            have h₀ := List.IsPrefix.getElem (List.prefix_append B'.pivots [n']) h
+            simp
+            rw [← h₀]
+            have h₁ :=B'.h_pivot_lt_n ⟨x, h⟩
+            simp at h₁
+            linarith [h₁]
+          else
+            have h₀ := x.2
+            simp at h₀
+            have h₁ : x = B'.pivots.length := by linarith
+            simp [h₁]
+        h_elim_mat := by
+          simp
+          rw [Matrix.mul_assoc]
+        h_pivot_ordered x y h_x_lt_y := by
+          if h_y_lt : y < B'.pivots.length then
+            have h_x_lt : x < B'.pivots.length := by
+              have h₀ : x.val < y.val := by simp [h_x_lt_y]
+              linarith
+            have h₀ := List.IsPrefix.getElem (List.prefix_append B'.pivots [n']) h_y_lt
+            have h₁ := List.IsPrefix.getElem (List.prefix_append B'.pivots [n']) h_x_lt
+            simp
+            rw [← h₀, ← h₁]
+            exact B'.h_pivot_ordered ⟨x,h_x_lt⟩ ⟨y, h_y_lt⟩ h_x_lt_y
+          else
+            have h₀ := y.2
+            simp at h₀
+            have h_y_eq : y = B'.pivots.length := by linarith [h_y_lt, h₀]
+            have h₁ := List.getElem_concat_length h_y_eq y.2
+            simp [h₁]
+            have h_x_lt : x.val < y.val := by simp [h_x_lt_y]
+            rw [h_y_eq] at h_x_lt
+            have h₂ := List.IsPrefix.getElem (List.prefix_append B'.pivots [n']) h_x_lt
+            rw [← h₂]
+            have h₃ := B'.h_pivot_lt_n ⟨x, h_x_lt⟩
+            simp at h₃
+            exact h₃
+        h_rank_le_width := by
+          simp
+          linarith [B'.h_rank_le_width]
+        h_rank_le_height := by
+          simp
+          linarith
+        h_submatrix := by
+          sorry
+        h_echelon := by
+          sorry
       }
-
-/-!
-def toReducedRowEchelonForm.rec
-    (X : (Matrix (Fin m) (Fin m) K)ˣ) (A : Matrix (Fin m) (Fin n) K) (pivots : List (Fin n))
-    (k : ℕ) (l : ℕ) :=
-  if h_l_ge_n : l ≥ n then
-    (X, A, pivots)
-  else if h_k_ge_m : k ≥ m then
-    (X, A, pivots)
-  else
-    let k_fin : Fin m := ⟨k, by linarith [h_k_ge_m]⟩
-    let l_fin : Fin n := ⟨l, by linarith [h_l_ge_n]⟩
-    match Finset.min { x : Fin m | x ≥ k_fin ∧ A x l_fin ≠ 0} with
-    | some i =>
-      let P := elimSwapReduce A i l_fin k_fin
-      toReducedRowEchelonForm.rec
-          (P * X)
-          (P.val * A)
-          (pivots ++ [l_fin]) (k + 1) (l + 1)
-    | none =>
-      toReducedRowEchelonForm.rec X A pivots k (l+1)
-
-def toReducedRowEchelonForm (A : Matrix (Fin m) (Fin n) K) :=
-  toReducedRowEchelonForm.rec 1 A [] 0 0
-
-lemma elim_mul_eq.rec
-    (X : (Matrix (Fin m) (Fin m) K)ˣ) (M : Matrix (Fin m) (Fin n) K) (pivot : List (Fin n))
-    (k : ℕ) (l : ℕ) :
-    let (Y, B, _) := toReducedRowEchelonForm.rec X (X.val * M) pivot k l
-    B = Y.val * M := by
-  unfold toReducedRowEchelonForm.rec
-  split_ifs with h_l_ge_n h_k_ge_m <;> try simp
-  let k_fin : Fin m := ⟨k, by linarith [h_k_ge_m]⟩
-  let l_fin : Fin n := ⟨l, by linarith [h_l_ge_n]⟩
-  match Finset.min {x : Fin m | k_fin ≤ x ∧ (X.val * M) x l_fin ≠ 0} with
-  | some i =>
-    simp
-    let P := (elimSwapReduce (X.val * M) i l_fin k_fin).val
-    rw [← Matrix.mul_assoc P X.val M]
-    apply elim_mul_eq.rec
-  | none =>
-    simp
-    apply elim_mul_eq.rec
-
-section
-variable (A : Matrix (Fin m) (Fin n) K)
-theorem elim_mul_eq :
-    let (Y, B, _) := toReducedRowEchelonForm A
-    B = Y.val * A := by
-  unfold toReducedRowEchelonForm
-  rw (occs := [1])[← Matrix.one_mul A]
-  apply elim_mul_eq.rec
-
-def resize_matrix (k l : ℕ) : Matrix (Fin k) (Fin l) K :=
-  (fun i j => if h : i < m ∧ j < n then A ⟨i.val, h.1⟩ ⟨j.val, h.2⟩ else 0)
-
-def rowRank : ℕ :=
-  let (_, _, pivots) := toReducedRowEchelonForm A
-  pivots.length
-
-theorem pivot_matrix :
-    let (_, B, pivots) := toReducedRowEchelonForm A
-    B.submatrix id (fun x => pivots.get x) =
-    (fun i j => if i.val = j.val then 1 else 0) := by
-  sorry
-
-end
-
-def pivotVector (pivot : List (Fin n)) (v : Fin m → K) : Fin n → K :=
-  ∑ j : Fin (pivot.length),
-    fun i : Fin n => if i = pivot[j] then if h : i<m then v ⟨i, h⟩ else 0 else 0
-
-def nonTrivialSolution (A : Matrix (Fin m) (Fin n) K) :
-    Option (Fin n → K):=
-  let (_, B, pivot) := toReducedRowEchelonForm A
-  match (Finset.univ \ pivot.toFinset).min with
-  | some l =>
-    some ((fun i => if i = l then 1 else 0) - pivotVector pivot (B.col l))
-  | none => none
--/
+end Matrix
