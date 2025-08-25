@@ -3,9 +3,9 @@
 import Mathlib.Data.Matrix.Basic
 import Mathlib.Algebra.Field.Basic
 import Mathlib.LinearAlgebra.Vandermonde
-import RSProved.GaussianElimination
 import Mathlib.InformationTheory.Hamming
 import Mathlib.Algebra.Polynomial.Basic
+import Mathlib.Algebra.Polynomial.Roots
 
 open Matrix Polynomial
 
